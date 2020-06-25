@@ -17,7 +17,8 @@ maintenance = { status = "actively-developed" }
 
 [dependencies]
 serde = { version = "1.0", default-features = false, optional = true }
+ascii = { version = "1.0", default-features = false }
 
 [features]
 default = ["std"]
-std = []
+std = ["ascii/std"]
