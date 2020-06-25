@@ -3,6 +3,17 @@ name = "uri"
 version = "0.5.0"
 authors = ["Marli Frost <marli@frost.red>"]
 edition = "2018"
+description = "Validate and parse URIs"
+documentation = "https://docs.rs/uri"
+readme = "README.md"
+homepage = "https://github.com/Plecra/uri"
+repository = "https://github.com/Plecra/uri"
+keywords = ["uri", "url", "ietf"]
+categories = ["filesystem", "no-std", "parsing", "web-programming"]
+publish = false
+
+[badges]
+maintenance = { status = "actively-developed" }
 
 [dependencies]
 serde = { version = "1.0", default-features = false, optional = true }
