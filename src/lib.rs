@@ -38,34 +38,34 @@ pub struct Uri<T: StableStrRef> {
 
 impl<T: StableStrRef> Uri<T> {
     pub fn parse(_: T) -> Result<Self, (T, Error)> {
-        todo!()
+        unimplemented!()
     }
 
     pub fn scheme(&self) -> Option<&str> {
-        todo!()
+        unimplemented!()
     }
     pub fn authority(&self) -> Option<&str> {
-        todo!()
+        unimplemented!()
     }
     pub fn path(&self) -> &str {
-        todo!()
+        unimplemented!()
     }
     pub fn query(&self) -> Option<&str> {
-        todo!()
+        unimplemented!()
     }
     pub fn fragment(&self) -> Option<&str> {
-        todo!()
+        unimplemented!()
     }
     
     // Components of Uri::authority
     pub fn userinfo(&self) -> Option<&str> {
-        todo!()
+        unimplemented!()
     }
     pub fn port(&self) -> Option<&str> {
-        todo!()
+        unimplemented!()
     }
     pub fn host(&self) -> Option<&str> {
-        todo!()
+        unimplemented!()
     }
     
     pub fn into_inner(self) -> T {
@@ -124,7 +124,7 @@ impl<T: StableStrRef> AsRef<str> for Uri<T> {
 // Normalized comparisons
 impl<T: StableStrRef> cmp::PartialEq for Uri<T> {
     fn eq(&self, _: &Self) -> bool {
-        todo!()
+        unimplemented!()
     }
 }
 impl<T: StableStrRef> cmp::Eq for Uri<T> {}
@@ -135,12 +135,12 @@ impl<T: StableStrRef> cmp::PartialOrd for Uri<T> {
 }
 impl<T: StableStrRef> cmp::Ord for Uri<T> {
     fn cmp(&self, _: &Self) -> cmp::Ordering {
-        todo!()
+        unimplemented!()
     }
 }
 impl<T: StableStrRef> hash::Hash for Uri<T> {
     fn hash<H: hash::Hasher>(&self, _: &mut H) {
-        todo!()
+        unimplemented!()
     }
 }
 
