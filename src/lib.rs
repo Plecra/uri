@@ -18,7 +18,7 @@ impl std::error::Error for Error {}
 
 /// Marker trait for types that a `Uri` can contain
 ///
-/// The guarantees this trait makes are not yet defined, so 
+/// The guarantees this trait makes are not yet defined, so
 /// there is currently **no** safe way to implement it.
 // The gist is just that implementers will return the
 // same slice so long as they're not mutated
@@ -56,7 +56,7 @@ impl<T: StableStrRef> Uri<T> {
     pub fn fragment(&self) -> Option<&str> {
         unimplemented!()
     }
-    
+
     // Components of Uri::authority
     pub fn userinfo(&self) -> Option<&str> {
         unimplemented!()
@@ -67,12 +67,11 @@ impl<T: StableStrRef> Uri<T> {
     pub fn host(&self) -> Option<&str> {
         unimplemented!()
     }
-    
+
     pub fn into_inner(self) -> T {
         self.data
     }
 }
-
 
 impl<T: StableStrRef> fmt::Display for Uri<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -144,7 +143,6 @@ impl<T: StableStrRef> hash::Hash for Uri<T> {
     }
 }
 
-
 impl<T: StableStrRef + Clone> Clone for Uri<T> {
     fn clone(&self) -> Self {
         Self {
@@ -159,7 +157,7 @@ unsafe impl<T: StableStrRef + Send> Send for Uri<T> {}
 mod serde_impls {
     use super::*;
     use serde::*;
-    
+
     impl<'de, T: StableStrRef + Deserialize<'de>> Deserialize<'de> for Uri<T> {
         fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
             Uri::parse(T::deserialize(deserializer)?).map_err(|(s, _)| {
