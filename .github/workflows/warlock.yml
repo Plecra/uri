@@ -1,0 +1,53 @@
+name: Warlock
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  behaviour:
+    name: Does the code behave?
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        rust: [nightly, stable, 1.31.0]
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install ${{ matrix.rust }}
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.rust }}
+        override: true
+    - uses: actions-rs/cargo@v1
+      with:
+        command: check
+        args: --lib --examples
+    - uses: actions-rs/cargo@v1
+      with:
+        command: test
+  style: 
+    name: Does the code look good?
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt, clippy
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: -- --check
+      - uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --no-deps
