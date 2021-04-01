@@ -20,4 +20,5 @@ serde = { version = "1.0", default-features = false, optional = true }
 
 [features]
 default = ["std"]
-std = []
+std = ["alloc"]
+alloc = []
