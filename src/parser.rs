@@ -1,4 +1,4 @@
-use crate::{Error, Uri};
+use crate::{Error, Repr, Uri};
 use core::convert::TryInto;
 
 #[inline]
@@ -53,7 +53,7 @@ fn port(
                     f,
                 )
             }
-            _ => todo!(),
+            _ => return Err(Error::todo()),
         }
     }
 }
@@ -71,15 +71,21 @@ fn host(
                 let mut addr = loop {
                     ip_future = match ip_future {
                         [d, rest @ ..] if hexdig(*d) => rest,
-                        [b'.', c, rest @ ..] if unreserved(*c) || sub_delims(*c) || matches!(c, b':') => break rest,
-                        _ => todo!(),
+                        [b'.', c, rest @ ..]
+                            if unreserved(*c) || sub_delims(*c) || matches!(c, b':') =>
+                        {
+                            break rest
+                        }
+                        _ => return Err(Error::todo()),
                     }
                 };
                 loop {
                     addr = match addr {
-                        [c, rest @ ..] if unreserved(*c) || sub_delims(*c) || matches!(c, b':') => rest,
+                        [c, rest @ ..] if unreserved(*c) || sub_delims(*c) || matches!(c, b':') => {
+                            rest
+                        }
                         [b']', rest @ ..] => break rest,
-                        _ => todo!()
+                        _ => return Err(Error::todo()),
                     }
                 }
             }
@@ -89,18 +95,25 @@ fn host(
                     ipv6 = match ipv6 {
                         [b']', rest @ ..] => break rest,
                         // FIXME: implement "real" ipv6 parsing
-                        [c, rest @ ..] if matches!(c, b'0'..=b'9' | b'A'..=b'F' | b':' | b'.')=> rest,
-                        _ => todo!()
+                        [c, rest @ ..] if matches!(c, b'0'..=b'9' | b'A'..=b'F' | b':' | b'.') => {
+                            rest
+                        }
+                        _ => return Err(Error::todo()),
                     }
                 }
-            
             }
-            _ => todo!()
+            _ => return Err(Error::todo()),
         };
         match following {
-            [b':', rest @ ..] => port(rest, scheme_sep, userinfo_sep, (f(rest) + 1).try_into().map_err(|_| Error::too_large())?, f),
+            [b':', rest @ ..] => port(
+                rest,
+                scheme_sep,
+                userinfo_sep,
+                f(following).try_into().map_err(|_| Error::too_large())?,
+                f,
+            ),
             rest => {
-                let path_start = (f(rest) + 1).try_into().map_err(|_| Error::too_large())?;
+                let path_start = f(rest).try_into().map_err(|_| Error::too_large())?;
                 path(rest, scheme_sep, userinfo_sep, path_start, path_start, f)
             }
         }
@@ -120,14 +133,7 @@ fn host(
                 }
                 [b'/', p @ ..] => {
                     let path_start = f(bytes).try_into().map_err(|_| Error::too_large())?;
-                    return path(
-                        p,
-                        scheme_sep,
-                        scheme_sep,
-                        path_start,
-                        path_start,
-                        f,
-                    );
+                    return path(p, scheme_sep, userinfo_sep, path_start, path_start, f);
                 }
                 [b'?', p @ ..] => {
                     let query_sep = f(bytes);
@@ -135,7 +141,7 @@ fn host(
                     return query(
                         p,
                         scheme_sep,
-                        scheme_sep,
+                        userinfo_sep,
                         path_start,
                         path_start,
                         query_sep,
@@ -148,14 +154,29 @@ fn host(
                     return fragment(
                         p,
                         scheme_sep,
-                        scheme_sep,
+                        userinfo_sep,
                         path_start,
                         path_start,
                         fragment_sep,
                         fragment_sep,
+                        f,
                     );
                 }
-                _ => todo!(),
+                [] => {
+                    let end = f(bytes);
+                    let path_start = end.try_into().map_err(|_| Error::too_large())?;
+
+                    return Ok(Uri {
+                        scheme_sep,
+                        userinfo_sep,
+                        port_sep: path_start,
+                        path_start,
+                        query_sep: end,
+                        fragment_sep: end,
+                        data: (),
+                    });
+                }
+                _ => return Err(Error::todo()),
             }
         }
     }
@@ -226,9 +247,23 @@ fn authority(
                     path_start,
                     fragment_sep,
                     fragment_sep,
+                    f,
                 );
             }
-            _ => todo!(),
+            [] => {
+                let end = f(bytes);
+                let path_start = end.try_into().map_err(|_| Error::too_large())?;
+                return Ok(Uri {
+                    scheme_sep,
+                    userinfo_sep: scheme_sep,
+                    port_sep: last_colon.unwrap_or(path_start),
+                    path_start,
+                    query_sep: end,
+                    fragment_sep: end,
+                    data: (),
+                });
+            }
+            _ => return Err(Error::todo()),
         }
     }
 }
@@ -240,6 +275,7 @@ fn fragment(
     path_start: u32,
     query_sep: usize,
     fragment_sep: usize,
+    f: impl Fn(&[u8]) -> usize,
 ) -> Result<Uri<()>, Error> {
     loop {
         bytes = match bytes {
@@ -256,7 +292,7 @@ fn fragment(
                     data: (),
                 })
             }
-            v => todo!("{:?}", std::str::from_utf8(v)),
+            v => return Err(Error(Repr::Fragment(fragment_sep, f(bytes)))),
         }
     }
 }
@@ -282,6 +318,7 @@ fn query(
                     path_start,
                     query_sep,
                     f(bytes),
+                    f,
                 )
             }
             [] => {
@@ -295,7 +332,7 @@ fn query(
                     data: (),
                 })
             }
-            _ => todo!(),
+            _ => return Err(Error::todo()),
         }
     }
 }
@@ -331,6 +368,7 @@ fn path(
                     path_start,
                     f(bytes),
                     f(bytes),
+                    f,
                 )
             }
             [] => {
@@ -344,7 +382,7 @@ fn path(
                     data: (),
                 })
             }
-            _ => todo!(),
+            _ => return Err(Error::todo()),
         }
     }
 }
@@ -354,7 +392,18 @@ fn no_colon_segment(mut bytes: &[u8], f: impl Fn(&[u8]) -> usize) -> Result<Uri<
             [b, rest @ ..] if unreserved(*b) || sub_delims(*b) || matches!(b, b'@') => rest,
             [b'%', a, b, rest @ ..] if hexdig(*a) && hexdig(*b) => rest,
             [b'/', rest @ ..] => return path(rest, 0, 0, 0, 0, f),
-            _ => todo!(),
+            [] => {
+                return Ok(Uri {
+                    scheme_sep: 0,
+                    userinfo_sep: 0,
+                    port_sep: 0,
+                    path_start: 0,
+                    query_sep: f(bytes),
+                    fragment_sep: f(bytes),
+                    data: (),
+                })
+            }
+            _ => return Err(Error(Repr::NoColonSegment(f(bytes)))),
         }
     }
 }
@@ -442,12 +491,23 @@ mod tests {
                     (Segment::Fragment, "/private"),
                 ],
             ),
+            ("anything", &[(Segment::Path, "anything")]),
         ] {
             let uri = Uri::parse(text.as_bytes()).expect("valid URI to parse");
             for &(segment, expected) in expected {
                 assert_eq!(&uri[segment], expected);
             }
             assert_eq!(uri.segments().collect::<Vec<_>>(), expected);
+        }
+    }
+    #[test]
+    fn invalid_uris() {
+        for &(not_uri, reason) in &[
+            (":9d283f", "minimum scheme length is 1"),
+            ("A://@:/?##", "fragment must not contain #"),
+            ("-https://github.com:6071", ""),
+        ] {
+            Uri::parse(not_uri).expect_err(reason);
         }
     }
 }

@@ -1,28 +1,86 @@
 use core::convert::TryInto;
-use core::{cmp, fmt, hash, ops::{self, Bound}};
+use core::{
+    cmp, fmt, hash,
+    ops::{self, Bound},
+};
 
 mod parser;
 
 #[derive(Debug)]
-pub struct Error {
-    repr: Repr,
-}
+pub struct Error(Repr);
 #[derive(Debug)]
 enum Repr {
+    Fragment(usize, usize),
+    NoColonSegment(usize),
     TooLarge,
+    Todo,
 }
 impl Error {
+    fn todo() -> Self {
+        Self(Repr::Todo)
+    }
     fn too_large() -> Self {
-        Self {
-            repr: Repr::TooLarge,
+        Self(Repr::TooLarge)
+    }
+    pub fn within<B>(self, buffer: B) -> BadUri<B> {
+        BadUri {
+            error: self,
+            buffer,
         }
     }
 }
+pub struct BadUri<B> {
+    error: Error,
+    buffer: B,
+}
+fn decode_utf8(b: &[u8]) -> Option<char> {
+    core::str::from_utf8(b)
+        .unwrap_or_else(|e| core::str::from_utf8(&b[..e.valid_up_to()]).unwrap())
+        .chars()
+        .next()
+}
+impl<B: Buffer> fmt::Display for BadUri<B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.error.0 {
+            Repr::TooLarge => f.write_str("the authority was larger than 4GB"),
+            Repr::Fragment(hash, err) => {
+                let bytes = self.buffer.as_bytes();
+                let context =
+                    core::str::from_utf8(&bytes[hash.min(err.checked_sub(12).unwrap_or(0))..err])
+                        .unwrap();
 
+                let err = decode_utf8(&bytes[err..]).unwrap_or(core::char::REPLACEMENT_CHARACTER);
+                write!(f, "expected fragment after {:?}, found {:?}", context, err)
+            }
+            Repr::NoColonSegment(err) => {
+                let bytes = self.buffer.as_bytes();
+                match &bytes[err..] {
+                    [b':', ..] => write!(
+                        f,
+                        "invalid scheme {:?}",
+                        core::str::from_utf8(&bytes[..err]).unwrap()
+                    ),
+                    non_path => {
+                        write!(
+                            f,
+                            "expected path after {:?}, found {:?}",
+                            core::str::from_utf8(&bytes[..err]).unwrap(),
+                            decode_utf8(non_path).unwrap_or(core::char::REPLACEMENT_CHARACTER)
+                        )
+                    }
+                }
+            }
+            Repr::Todo => write!(f, "idk"),
+        }
+    }
+}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.repr {
+        match self.0 {
             Repr::TooLarge => f.write_str("the authority was larger than 4GB"),
+            Repr::Fragment(..) => f.write_str("invalid URI fragment"),
+            Repr::NoColonSegment(..) => f.write_str("invalid URI path"),
+            Repr::Todo => f.write_str("idk"),
         }
     }
 }
@@ -53,6 +111,7 @@ mod private {
     impl Sealed for Box<[u8]> {}
     impl Sealed for [u8] {}
     impl Sealed for str {}
+    impl Sealed for String {}
     impl<T: ?Sized + Sealed> Sealed for &'_ T {}
 }
 pub unsafe trait Buffer: private::Sealed {
@@ -74,12 +133,16 @@ unsafe impl Buffer for str {
         self.as_bytes()
     }
 }
+unsafe impl Buffer for String {
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
 unsafe impl<T: ?Sized + Buffer> Buffer for &'_ T {
     fn as_bytes(&self) -> &[u8] {
         (*self).as_bytes()
     }
 }
-
 
 impl<B: Buffer> Uri<B> {
     pub fn parse(data: B) -> Result<Self, (B, Error)> {
@@ -105,80 +168,92 @@ impl<B: Buffer> Uri<B> {
         }
     }
     pub fn as_str(&self) -> &str {
-        unsafe { core::str::from_utf8_unchecked(self.data.as_bytes()) }
+        core::str::from_utf8(self.data.as_bytes()).unwrap()
     }
     pub fn scheme(&self) -> Option<&str> {
         if self.scheme_sep != 0 {
-            Some(unsafe {
+            Some(
                 self.as_str()
-                    .get_unchecked(self.start_of(Segment::Scheme)..self.end_of(Segment::Scheme))
-            })
+                    .get(self.start_of(Segment::Scheme)..self.end_of(Segment::Scheme))
+                    .unwrap(),
+            )
         } else {
             None
         }
     }
     pub fn authority(&self) -> Option<&str> {
         if self.path_start > self.scheme_sep + 1 {
-            Some(unsafe {
+            Some(
                 self.as_str()
-                    .get_unchecked(self.start_of(Segment::Userinfo)..self.end_of(Segment::Port))
-            })
+                    .get(self.start_of(Segment::Userinfo)..self.end_of(Segment::Port))
+                    .unwrap(),
+            )
         } else {
             None
         }
     }
     pub fn path(&self) -> &str {
-        unsafe {
-            self.as_str()
-                .get_unchecked(self.start_of(Segment::Path)..self.end_of(Segment::Path))
-        }
+        self.as_str()
+            .get(self.start_of(Segment::Path)..self.end_of(Segment::Path))
+            .unwrap()
     }
     pub fn query(&self) -> Option<&str> {
         if self.query_sep != self.fragment_sep {
-            Some(unsafe {
+            Some(
                 self.as_str()
-                    .get_unchecked(self.start_of(Segment::Query)..self.end_of(Segment::Query))
-            })
+                    .get(self.start_of(Segment::Query)..self.end_of(Segment::Query))
+                    .unwrap(),
+            )
         } else {
             None
         }
     }
     pub fn fragment(&self) -> Option<&str> {
         if self.fragment_sep != self.data.as_bytes().len() {
-            Some(unsafe {
+            Some(
                 self.as_str()
-                    .get_unchecked(self.start_of(Segment::Fragment)..self.end_of(Segment::Fragment))
-            })
+                    .get(self.start_of(Segment::Fragment)..self.end_of(Segment::Fragment))
+                    .unwrap(),
+            )
         } else {
             None
         }
     }
     pub fn userinfo(&self) -> Option<&str> {
         if self.userinfo_sep != self.scheme_sep {
-            Some(unsafe {
+            Some(
                 self.as_str()
-                    .get_unchecked(self.start_of(Segment::Userinfo)..self.end_of(Segment::Userinfo))
-            })
+                    .get(self.start_of(Segment::Userinfo)..self.end_of(Segment::Userinfo))
+                    .unwrap(),
+            )
         } else {
             None
         }
     }
     pub fn port(&self) -> Option<&str> {
         if self.port_sep != self.path_start {
-            Some(unsafe {
+            Some(
                 self.as_str()
-                    .get_unchecked(self.start_of(Segment::Port)..self.end_of(Segment::Port))
-            })
+                    .get(self.start_of(Segment::Port)..self.end_of(Segment::Port))
+                    .unwrap(),
+            )
         } else {
             None
         }
     }
     pub fn host(&self) -> Option<&str> {
-        if self.path_start != self.scheme_sep + 1 {
-            Some(unsafe {
+        if self.path_start
+            != if self.scheme_sep == 0 {
+                0
+            } else {
+                self.scheme_sep + 1
+            }
+        {
+            Some(
                 self.as_str()
-                    .get_unchecked(self.start_of(Segment::Host)..self.end_of(Segment::Host))
-            })
+                    .get(self.start_of(Segment::Host)..self.end_of(Segment::Host))
+                    .unwrap(),
+            )
         } else {
             None
         }
@@ -219,11 +294,11 @@ impl<B: Buffer, R: core::ops::RangeBounds<Segment>> ops::Index<R> for Uri<B> {
         &s[match index.start_bound() {
             Bound::Unbounded => 0,
             Bound::Excluded(seg) => self.end_of(*seg),
-            Bound::Included(seg) => dbg!(self.start_of(*seg)),
+            Bound::Included(seg) => self.start_of(*seg),
         }..match index.end_bound() {
-            Bound::Unbounded => dbg!(s.len()),
+            Bound::Unbounded => s.len(),
             Bound::Excluded(seg) => self.start_of(*seg),
-            Bound::Included(seg) => self.end_of(*seg)
+            Bound::Included(seg) => self.end_of(*seg),
         }]
     }
 }
@@ -235,16 +310,18 @@ impl<B: Buffer> Uri<B> {
     fn start_of(&self, section: Segment) -> usize {
         match section {
             Segment::Scheme => 0,
-            Segment::Userinfo => as_usize(self.scheme_sep) + 3usize,
+            Segment::Userinfo => {
+                as_usize(self.scheme_sep) + if self.scheme_sep != 0 { 3 } else { 2 }
+            }
             Segment::Host => {
                 if self.userinfo_sep != self.scheme_sep {
                     as_usize(self.userinfo_sep) + 1
                 } else {
-                    as_usize(self.scheme_sep) + 3
+                    self.start_of(Segment::Userinfo)
                 }
             }
             Segment::Port => as_usize(self.port_sep) + 1usize,
-            Segment::Path => as_usize(dbg!(self.path_start)),
+            Segment::Path => as_usize(self.path_start),
             Segment::Query => self.query_sep + 1,
             Segment::Fragment => self.fragment_sep + 1,
         }
@@ -383,11 +460,12 @@ mod serde_impls {
 }
 #[cfg(test)]
 mod tests {
-    use super::{Uri, Segment};
+    use super::{Segment, Uri};
     #[test]
     fn segment_ranges() {
         assert_eq!(
-            &Uri::parse("//plecra@github.com/Plecra/uri?all_commits=true#darkmode").unwrap()[Segment::Path..],
+            &Uri::parse("//plecra@github.com/Plecra/uri?all_commits=true#darkmode").unwrap()
+                [Segment::Path..],
             "/Plecra/uri?all_commits=true#darkmode"
         );
         assert_eq!(
